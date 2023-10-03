@@ -7,7 +7,7 @@ from translates import translations
 import requests
 import json
 
-TOKEN = '6390378942:AAGMK1razZWemvIESD7ybbXkECK5fcBMOe0'
+TOKEN = '6649677369:AAGLcrm5OUz31M8a5FNmKyaYHJjMw6iZ2b4'
 bot = telebot.TeleBot(TOKEN)
 
 # user related
