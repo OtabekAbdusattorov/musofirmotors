@@ -468,6 +468,9 @@ def handle_age_menu(message):
         cursor = connection.cursor()
         cursor.execute('CREATE TABLE IF NOT EXISTS ageInput (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, input varchar(50), date date)')
         cursor.execute("INSERT INTO ageInput (user_id, input, date) VALUES('%s', '%s', '%s')" % (user_id, age_input, time))
+        if get_type_input(message) == user_sessions[user_id]['translated_car_types'][-1]:
+            cursor.execute('CREATE TABLE IF NOT EXISTS volumeInput (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, input varchar(50), date date)')
+            cursor.execute("INSERT INTO volumeInput (user_id, input, date) VALUES('%s', '%s', '%s')" % (user_id, '', time))
         connection.commit()
         cursor.close()
         connection.close()
@@ -807,4 +810,4 @@ def calculation_menu(message):
 
 
 if __name__ == '__main__':
-    bot.polling()
+    bot.infinity_polling()
