@@ -7,7 +7,7 @@ from translates import translations
 import requests
 import json
 
-TOKEN = '6649677369:AAGLcrm5OUz31M8a5FNmKyaYHJjMw6iZ2b4'
+TOKEN = '6390378942:AAGMK1razZWemvIESD7ybbXkECK5fcBMOe0'
 bot = telebot.TeleBot(TOKEN)
 
 # user related
@@ -16,7 +16,6 @@ user_states = {}
 
 # user input related
 vol_input_dict = {}
-user_sessions = {}
 user_languages = {}
 
 # car related + lang related
@@ -50,6 +49,7 @@ age_query = "SELECT input FROM ageInput WHERE id in (SELECT MAX(id) FROM ageInpu
 price_query = "SELECT input FROM priceInput WHERE id in (SELECT MAX(id) FROM priceInput GROUP BY user_id) AND user_id = ? GROUP BY user_id ORDER BY id DESC"
 volume_query = "SELECT input FROM volumeInput WHERE id in (SELECT MAX(id) FROM volumeInput GROUP BY user_id) AND user_id = ? GROUP BY user_id ORDER BY id DESC"
 lang_query = "SELECT input FROM langInput WHERE id in (SELECT MAX(id) FROM langInput GROUP BY user_id) AND user_id = ? GROUP BY user_id ORDER BY id DESC"
+state_query = "SELECT state FROM userStates WHERE id in (SELECT MAX(id) FROM userStates GROUP BY user_id) AND user_id = ? GROUP BY user_id ORDER BY id DESC"
 overall_query = """SELECT 
     a.user_id
     ,b.input type 
@@ -220,6 +220,71 @@ def start(message):
         killer(message)
 
 
+# state related, checking, updating
+def get_state(message):
+    user_id = message.from_user.id
+    connection = sqlite3.connect('musofirmotors.db')
+    cursor = connection.cursor()
+    cursor.execute(state_query, (user_id,))
+    state = ''
+    try:
+        for row in cursor.fetchall():
+            state = row[0]
+    except sqlite3.Error as e:
+        print(f"SQLite error: {e}")
+    cursor.close()
+    connection.close()
+    return state
+
+
+def insert_state(user_id, user_states, now_time):
+    connection = sqlite3.connect('musofirmotors.db')
+    cursor = connection.cursor()
+    cursor.execute("INSERT INTO userStates (user_id, state, date) VALUES('%s', '%s', '%s')" % (user_id, user_states, now_time))
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
+def update_state(user_states, user_id):
+    connection = sqlite3.connect('musofirmotors.db')
+    cursor = connection.cursor()
+    cursor.execute("UPDATE userStates SET state = '%s' WHERE user_id = '%s'" % (user_states, user_id))
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
+async def checking_state(message):
+    user_id = message.from_user.id
+    connection = sqlite3.connect('musofirmotors.db')
+    cursor = connection.cursor()
+    cursor.execute(state_query, (user_id,))
+    for row in cursor.fetchall():
+        state = row[0]
+    cursor.close()
+    connection.close()
+    preferred_language = get_lang(message)
+    if state == 'main_menu':
+        handle_member(message)
+    elif state == 'type_menu':
+        handle_type_menu(message)
+    elif state == 'volume_menu':
+        handle_volume_menu(message)
+    elif state == 'age_menu':
+        handle_age_menu(message)
+    elif state == 'price_menu':
+        handle_price_menu(message)
+    elif state == 'confirmation_menu':
+        handle_confirmation_page(message)
+    elif state == 'calculation_menu':
+        member(message)
+    elif message.text.isdigit():
+        handle_numeric_input(message)
+    else:
+        bot.send_message(message.chat.id, "Bot'da o'zgarishlar bo'lganligi sababli qayta ishga tushdi. Bot xizmatidan foydalanish uchun /start ni bosing")
+
+
 def member(message):
     user_states[message.chat.id] = 'main_menu'
 
@@ -235,16 +300,15 @@ def member(message):
     cursor = connection.cursor()
     cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, first_name varchar(100), last_name varchar(100), username varchar(100), is_bot bool, date date)')
     cursor.execute("INSERT INTO users (user_id, first_name, last_name, username, is_bot, date) VALUES('%s', '%s', '%s', '%s', '%s', '%s')" % (user_id, first_name, last_name, user_name, is_bot, time))
+    cursor.execute('CREATE TABLE IF NOT EXISTS userStates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, state varchar(50), date date)')
     connection.commit()
     cursor.close()
     connection.close()
 
-    # user session
-    if user_id in user_sessions:
-        session = user_sessions[user_id]
+    if get_state(message) == '':
+        insert_state(user_id=user_id, user_states=user_states[message.chat.id], now_time=time)
     else:
-        session = {'state': 'type_menu', 'translated_car_types': None}
-    user_sessions[user_id] = session
+        update_state(user_states=user_states[message.chat.id], user_id=user_id)
 
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = KeyboardButton("O'zbek 🇺🇿")
@@ -309,25 +373,25 @@ def type_menu(message):
     user_id = message.from_user.id
     user_states[message.chat.id] = 'type_menu'
 
-    session = user_sessions[user_id]
-    session['state'] = 'type_menu'
-    session['translated_car_types'] = [translations[get_lang(message)].get(car_type) for car_type in car_types]
+    if get_state(message) == '':
+        insert_state(user_id=user_id, user_states=user_states[message.chat.id], now_time=time)
+    else:
+        update_state(user_states=user_states[message.chat.id], user_id=user_id)
 
     if is_member(user_id):
         type_menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-        type_menu_keyboard.row(session['translated_car_types'][0], session['translated_car_types'][1])
-        type_menu_keyboard.row(session['translated_car_types'][2], session['translated_car_types'][3])
-        type_menu_keyboard.row(session['translated_car_types'][4])
+        type_menu_keyboard.row([translations[get_lang(message)].get(car_type) for car_type in car_types][0], [translations[get_lang(message)].get(car_type) for car_type in car_types][1])
+        type_menu_keyboard.row([translations[get_lang(message)].get(car_type) for car_type in car_types][2], [translations[get_lang(message)].get(car_type) for car_type in car_types][3])
+        type_menu_keyboard.row([translations[get_lang(message)].get(car_type) for car_type in car_types][4])
         type_menu_keyboard.row(translations[get_lang(message)]['back'])
         bot.send_message(message.chat.id, translations[get_lang(message)]['choose_type'], reply_markup=type_menu_keyboard)
     else:
         killer(message)
-
+    checking_state(message)
 
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'type_menu')
 def handle_type_menu(message):
     user_id = message.from_user.id
-    session = user_sessions.get(user_id, {})
     type_input = message.text
 
     if is_member(user_id):
@@ -339,13 +403,12 @@ def handle_type_menu(message):
         cursor.close()
         connection.close()
         if type_input == translations[get_lang(message)]['back']:
-            session['state'] = 'main_menu'
             member(message)
-        elif type_input == session['translated_car_types'][-1]:
-            if message.chat.id in vol_input_dict and type_input == user_sessions[user_id]['translated_car_types'][-1]:
+        elif type_input == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
+            if message.chat.id in vol_input_dict and type_input == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
                 del vol_input_dict[message.chat.id]
             age_menu(message)
-        elif type_input != session['translated_car_types'][-1]:
+        elif type_input != [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             volume_menu(message)
     else:
         killer(message)
@@ -365,8 +428,7 @@ def get_type_input(message):
 
 @bot.message_handler(func=lambda message: message.text.isdigit())
 def handle_numeric_input(message):
-    user_id = message.from_user.id
-    current_state = user_states.get(user_id)
+    current_state = get_state(message)
     if current_state == 'volume_menu':
         if message.text.isdigit() and int(message.text) != 0:
             handle_volume_menu(message)
@@ -381,15 +443,19 @@ def handle_numeric_input(message):
 
 @bot.message_handler(func=lambda message: message.text in 
                      [
-                    translations[preferred_language][car_types[0]], 
-                    translations[preferred_language][car_types[1]], 
-                    translations[preferred_language][car_types[2]], 
-                    translations[preferred_language][car_types[3]]
+                    translations[get_lang(message)][car_types[0]], 
+                    translations[get_lang(message)][car_types[1]], 
+                    translations[get_lang(message)][car_types[2]], 
+                    translations[get_lang(message)][car_types[3]]
                     ])
 def volume_menu(message):
     user_states[message.chat.id] = 'volume_menu'
-    session = user_sessions[message.from_user.id]
-    session['state'] = 'volume_menu'
+
+    if get_state(message) == '':
+        insert_state(user_id=message.from_user.id, user_states=user_states[message.chat.id], now_time=time)
+    else:
+        update_state(user_states=user_states[message.chat.id], user_id=message.from_user.id)
+
     if is_member(message.from_user.id):
         volume_menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
         back_button = KeyboardButton(translations[get_lang(message)]['back'])
@@ -423,6 +489,7 @@ def handle_volume_menu(message):
                 bot.send_message(message.chat.id, translations[get_lang(message)]['wrong_volume'])
     else:
         killer(message)
+    checking_state(message)
 
 
 def get_volume_input(message):
@@ -440,15 +507,20 @@ def get_volume_input(message):
 @bot.message_handler(func=lambda message: message.text.isdigit())
 def age_menu(message):
     user_states[message.chat.id] = 'age_menu'
-    session = user_sessions[message.from_user.id]
+
+    if get_state(message) == '':
+        insert_state(user_id=message.from_user.id, user_states=user_states[message.chat.id], now_time=time)
+    else:
+        update_state(user_states=user_states[message.chat.id], user_id=message.from_user.id)
+
     if is_member(message.from_user.id):
         age_menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
 
-        if get_type_input(message) == session['translated_car_types'][-1]:
+        if get_type_input(message) == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             age_menu_button1 = KeyboardButton(translations[get_lang(message)]['one_three_year'])
             age_menu_button2 = KeyboardButton(translations[get_lang(message)]['three_plus_year'])
             age_menu_button_back = KeyboardButton(translations[get_lang(message)]['back'])
-        elif get_type_input(message) != session['translated_car_types'][-1]:
+        elif get_type_input(message) != [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             age_menu_button1 = KeyboardButton(translations[get_lang(message)]['one_year'])
             age_menu_button2 = KeyboardButton(translations[get_lang(message)]['two_plus_year'])
             age_menu_button_back = KeyboardButton(translations[get_lang(message)]['back'])
@@ -457,9 +529,10 @@ def age_menu(message):
         bot.send_message(message.chat.id, translations[get_lang(message)]['choose_age'], reply_markup=age_menu_keyboard)
     else:
         killer(message)
+    checking_state(message)
 
 
-@bot.message_handler(func=lambda message: user_states[message.chat.id] == 'age_menu')
+@bot.message_handler(func=lambda message: get_state(message) == 'age_menu')
 def handle_age_menu(message):
     age_input = message.text
     if is_member(message.from_user.id):
@@ -468,19 +541,19 @@ def handle_age_menu(message):
         cursor = connection.cursor()
         cursor.execute('CREATE TABLE IF NOT EXISTS ageInput (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, input varchar(50), date date)')
         cursor.execute("INSERT INTO ageInput (user_id, input, date) VALUES('%s', '%s', '%s')" % (user_id, age_input, time))
-        if get_type_input(message) == user_sessions[user_id]['translated_car_types'][-1]:
+        if get_type_input(message) == [translations[get_lang(message)].get(car_type) for car_type in car_types]:
             cursor.execute('CREATE TABLE IF NOT EXISTS volumeInput (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, input varchar(50), date date)')
             cursor.execute("INSERT INTO volumeInput (user_id, input, date) VALUES('%s', '%s', '%s')" % (user_id, '', time))
         connection.commit()
         cursor.close()
         connection.close()
-        if (get_type_input(message) == user_sessions[user_id]['translated_car_types'][-1] and age_input == translations[get_lang(message)]['back']):
+        if (get_type_input(message) == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1] and age_input == translations[get_lang(message)]['back']):
             user_states[message.chat.id] = 'type_menu'
             type_menu(message)
-        elif (get_type_input(message) != user_sessions[user_id]['translated_car_types'][-1] and age_input == translations[get_lang(message)]['back']):
+        elif (get_type_input(message) != [translations[get_lang(message)].get(car_type) for car_type in car_types][-1] and age_input == translations[get_lang(message)]['back']):
             user_states[message.chat.id] = 'volume_menu'
             volume_menu(message)
-        elif get_type_input(message) in user_sessions[user_id]['translated_car_types']:
+        elif get_type_input(message) in [translations[get_lang(message)].get(car_type) for car_type in car_types]:
             price_menu(message)
     else:
         killer(message)
@@ -501,6 +574,12 @@ def get_age_input(message):
 @bot.message_handler(func=lambda message: message.text in [translations[get_lang(message)]['one_year'], translations[get_lang(message)]['two_plus_year'], translations[get_lang(message)]['one_three_year'], translations[get_lang(message)]['three_plus_year']])
 def price_menu(message):
     user_states[message.chat.id] = 'price_menu'
+
+    if get_state(message) == '':
+        insert_state(user_id=message.from_user.id, user_states=user_states[message.chat.id], now_time=time)
+    else:
+        update_state(user_states=user_states[message.chat.id], user_id=message.from_user.id)
+
     if is_member(message.from_user.id):
         price_menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
         back_button = KeyboardButton(translations[get_lang(message)]['back'])
@@ -509,6 +588,7 @@ def price_menu(message):
         bot.send_message(message.chat.id, translations[get_lang(message)]['choose_price'], reply_markup=price_menu_keyboard)
     else:
         killer(message)
+    checking_state(message)
 
 
 @bot.message_handler(func=lambda message: user_states[message.chat.id] == 'price_menu')
@@ -550,6 +630,12 @@ def get_price_input(message):
 def confirmation_page(message):
     user_states[message.chat.id] = 'confirmation_page'
     confirmation_page_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+
+    if get_state(message) == '':
+        insert_state(user_id=message.from_user.id, user_states=user_states[message.chat.id], now_time=time)
+    else:
+        update_state(user_states=user_states[message.chat.id], user_id=message.from_user.id)
+
     if is_member(message.from_user.id):
         back_button = KeyboardButton(translations[get_lang(message)]['back'])
         confirm_button = KeyboardButton(translations[get_lang(message)]['confirm'])
@@ -566,7 +652,7 @@ def confirmation_page(message):
             c_age = row[2]
             c_price = row[3]
             c_volume = row[4]
-        if c_type == user_sessions[user_id]['translated_car_types'][-1]:
+        if c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             c_volume = 0
         confirmation_message = (
             f"{translations[get_lang(message)]['confirm_data']} \n\n"
@@ -580,6 +666,7 @@ def confirmation_page(message):
         connection.close()
     else:
         killer(message)
+    checking_state(message)
 
 
 @bot.message_handler(func=lambda message: user_states[message.chat.id] == 'confirmation_page')
@@ -601,6 +688,12 @@ def handle_confirmation_page(message):
 @bot.message_handler(func=lambda message: message.text == translations[get_lang(message)]['confirm'])
 def calculation_menu(message):
     user_states[message.chat.id] = 'calculation_menu'
+
+    if get_state(message) == '':
+        insert_state(user_id=message.from_user.id, user_states=user_states[message.chat.id], now_time=time)
+    else:
+        update_state(user_states=user_states[message.chat.id], user_id=message.from_user.id)
+
     if is_member:
         
         bhm = 330000
@@ -617,12 +710,12 @@ def calculation_menu(message):
             c_price = row[3]
             c_volume = row[4]
         
-        if c_type == user_sessions[user_id]['translated_car_types'][-1]:
+        if c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             c_volume = 0
         
 
         # utilization cost for every car
-        if c_type != user_sessions[user_id]['translated_car_types'][-1]:
+        if c_type != [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             if int(c_volume) < 1000:
                 utilization_cost = bhm * 30
                 indicator_utilization = 30
@@ -635,7 +728,7 @@ def calculation_menu(message):
             else:
                 utilization_cost = bhm * 300
                 indicator_utilization = 300
-        elif c_type == user_sessions[user_id]['translated_car_types'][-1]:
+        elif c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][-1]:
             utilization_cost = bhm * 30
             indicator_utilization = 30
         else:
@@ -650,7 +743,7 @@ def calculation_menu(message):
             percent_boj = 15
 
             # for petrol
-            if c_type == user_sessions[user_id]['translated_car_types'][0]:
+            if c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][0]:
                 if int(c_volume) < 1000:
                     bojxona_boji_percentage = int(c_price) * USDUZS * 0
                     percent_boj = 0
@@ -675,7 +768,7 @@ def calculation_menu(message):
                     indicator_boj = 1.25
             
             # for diesel
-            elif c_type == user_sessions[user_id]['translated_car_types'][1]:
+            elif c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][1]:
                 if int(c_volume) < 1000:
                     bojxona_boji_percentage = int(c_volume) * USDUZS * 0
                     percent_boj = 0
@@ -708,7 +801,7 @@ def calculation_menu(message):
             percent_boj = 30
 
             # for petrol
-            if c_type == user_sessions[user_id]['translated_car_types'][0]:
+            if c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][0]:
                 if int(c_volume) <= 1000:
                     bojxona_boji = bojxona_boji_percentage + int(c_volume) * (USDUZS * 1.8)
                     indicator_boj = 1.8
@@ -723,7 +816,7 @@ def calculation_menu(message):
                     indicator_boj = 3.0
             
             # for diesel
-            elif c_type == user_sessions[user_id]['translated_car_types'][1]:
+            elif c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][1]:
                 if int(c_volume) <= 1500:
                     bojxona_boji = bojxona_boji_percentage + int(c_volume) * (USDUZS * 2.0)
                     indicator_boj = 2.0
@@ -772,7 +865,7 @@ def calculation_menu(message):
         price_in_soum = int(c_price) * USDUZS
 
         # qqs
-        if c_type == user_sessions[user_id]['translated_car_types'][1]:
+        if c_type == [translations[get_lang(message)].get(car_type) for car_type in car_types][1]:
             qqs = price_in_soum * 0.12
         else:
             qqs = (price_in_soum + bojxona_boji) * 0.12
@@ -807,6 +900,7 @@ def calculation_menu(message):
 
     else:
         killer(message)
+    checking_state(message)
 
 
 if __name__ == '__main__':
