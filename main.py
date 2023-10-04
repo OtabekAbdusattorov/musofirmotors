@@ -6,6 +6,7 @@ from datetime import datetime
 from translates import translations
 import requests
 import json
+import asyncio
 
 TOKEN = '6390378942:AAGMK1razZWemvIESD7ybbXkECK5fcBMOe0'
 bot = telebot.TeleBot(TOKEN)
@@ -255,36 +256,6 @@ def update_state(user_states, user_id):
     connection.close()
 
 
-async def checking_state(message):
-    user_id = message.from_user.id
-    connection = sqlite3.connect('musofirmotors.db')
-    cursor = connection.cursor()
-    cursor.execute(state_query, (user_id,))
-    for row in cursor.fetchall():
-        state = row[0]
-    cursor.close()
-    connection.close()
-    preferred_language = get_lang(message)
-    if state == 'main_menu':
-        handle_member(message)
-    elif state == 'type_menu':
-        handle_type_menu(message)
-    elif state == 'volume_menu':
-        handle_volume_menu(message)
-    elif state == 'age_menu':
-        handle_age_menu(message)
-    elif state == 'price_menu':
-        handle_price_menu(message)
-    elif state == 'confirmation_menu':
-        handle_confirmation_page(message)
-    elif state == 'calculation_menu':
-        member(message)
-    elif message.text.isdigit():
-        handle_numeric_input(message)
-    else:
-        bot.send_message(message.chat.id, "Bot'da o'zgarishlar bo'lganligi sababli qayta ishga tushdi. Bot xizmatidan foydalanish uchun /start ni bosing")
-
-
 def member(message):
     user_states[message.chat.id] = 'main_menu'
 
@@ -387,9 +358,8 @@ def type_menu(message):
         bot.send_message(message.chat.id, translations[get_lang(message)]['choose_type'], reply_markup=type_menu_keyboard)
     else:
         killer(message)
-    checking_state(message)
 
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'type_menu')
+@bot.message_handler(func=lambda message: get_state(message) == 'type_menu')
 def handle_type_menu(message):
     user_id = message.from_user.id
     type_input = message.text
@@ -398,7 +368,7 @@ def handle_type_menu(message):
         connection = sqlite3.connect('musofirmotors.db')
         cursor = connection.cursor()
         cursor.execute('CREATE TABLE IF NOT EXISTS typeInput (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id int, input varchar(50), date date)')
-        cursor.execute("INSERT INTO typeInput (user_id, input, date) VALUES('%s', '%s', '%s')" % (user_id, type_input, time))
+        cursor.execute("INSERT INTO typeInput (user_id, input, date) VALUES(?, ?, ?)", (user_id, type_input, time))
         connection.commit()
         cursor.close()
         connection.close()
@@ -466,7 +436,7 @@ def volume_menu(message):
         killer(message)
 
 
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'volume_menu')
+@bot.message_handler(func=lambda message: get_state(message) == 'volume_menu')
 def handle_volume_menu(message):
     volume_input = message.text
     if is_member(message.from_user.id):
@@ -489,7 +459,6 @@ def handle_volume_menu(message):
                 bot.send_message(message.chat.id, translations[get_lang(message)]['wrong_volume'])
     else:
         killer(message)
-    checking_state(message)
 
 
 def get_volume_input(message):
@@ -529,7 +498,6 @@ def age_menu(message):
         bot.send_message(message.chat.id, translations[get_lang(message)]['choose_age'], reply_markup=age_menu_keyboard)
     else:
         killer(message)
-    checking_state(message)
 
 
 @bot.message_handler(func=lambda message: get_state(message) == 'age_menu')
@@ -588,10 +556,9 @@ def price_menu(message):
         bot.send_message(message.chat.id, translations[get_lang(message)]['choose_price'], reply_markup=price_menu_keyboard)
     else:
         killer(message)
-    checking_state(message)
 
 
-@bot.message_handler(func=lambda message: user_states[message.chat.id] == 'price_menu')
+@bot.message_handler(func=lambda message: get_state(message) == 'price_menu')
 def handle_price_menu(message):
     price_input = message.text
     if is_member(message.from_user.id):
@@ -666,10 +633,9 @@ def confirmation_page(message):
         connection.close()
     else:
         killer(message)
-    checking_state(message)
 
 
-@bot.message_handler(func=lambda message: user_states[message.chat.id] == 'confirmation_page')
+@bot.message_handler(func=lambda message: get_state(message) == 'confirmation_page')
 def handle_confirmation_page(message):
     confirm_input = message.text
     if is_member(message.from_user.id):
@@ -900,7 +866,6 @@ def calculation_menu(message):
 
     else:
         killer(message)
-    checking_state(message)
 
 
 if __name__ == '__main__':
