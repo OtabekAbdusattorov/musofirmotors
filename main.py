@@ -8,7 +8,7 @@ import requests
 import json
 import asyncio
 
-TOKEN = '6390378942:AAGMK1razZWemvIESD7ybbXkECK5fcBMOe0'
+TOKEN = '6649677369:AAE4TirbQyGNYLmybUPSj1sZZG7dzgz3hOw'
 bot = telebot.TeleBot(TOKEN)
 
 # user related
